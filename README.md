@@ -7,6 +7,8 @@
 
 在线演示：<https://ascii.3301921.xyz/>
 
+![池塘演示：撒鱼食，再切到浅色主题](demo.webp)
+
 ## 快速上手
 
 在页面里加两行：
@@ -129,6 +131,7 @@ pond.destroy();                 // 移除池塘
 | `src/util.js` | 公用的数学函数 |
 | `index.html` | 单页模板 |
 | `favicon.svg` | 模板的网页图标 |
+| `demo.webp` | README 里的演示动图 |
 | `examples/embed.html` | 嵌入示例 |
 | `fonts/` | 模板用的 Geist Mono 字体 |
 

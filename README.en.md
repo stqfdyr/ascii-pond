@@ -7,6 +7,8 @@ click the water to drop food. Plain JavaScript: no build step, no dependencies.
 
 Demo: <https://ascii.3301921.xyz/>
 
+![The pond: dropping food, then switching to the light theme](demo.webp)
+
 ## Quick start
 
 Add two lines to your page:
@@ -137,6 +139,7 @@ to the `species` option.
 | `src/util.js` | shared maths |
 | `index.html` | one-page template |
 | `favicon.svg` | the template's tab icon |
+| `demo.webp` | the demo animation in this README |
 | `examples/embed.html` | embed example |
 | `fonts/` | Geist Mono, used by the template |
 
