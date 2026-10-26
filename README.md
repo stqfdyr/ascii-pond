@@ -102,14 +102,15 @@ pond.destroy();                 // 移除池塘
   seed(pond) {},                           // 生成初始个体，放进 pond.creatures
   step(pond, creature, dt) {},             // 更新一个个体（每秒 120 次）
   draw(renderer, creature, time) {},       // 把它画进 renderer.grid
-  grow(pond, areaBefore) {},               // 可选：窗口变大时补几条
+  grow(pond) {},                           // 可选：窗口大小停下来 1.5 秒后调用，按新尺寸增减
   wake(renderer, creature) {},             // 可选：搅出水波，用 renderer.stir(x, y, amount)
   splash(pond, pellet) {},                 // 可选：鱼食刚落水
   floating(pond, pellet) {},               // 可选：鱼食漂在水面时，每次更新都调用
 }
 ```
 
-每个个体要带上 `species`（指向这个对象）和 `depth`（0 是水底，1 是水面，越深越先画）。
+每个个体要带上 `species`（指向这个对象）和 `depth`（0 是水底，1 是水面，越深越先画）；
+给个体设 `gone = true`，这一步结束后就把它移除。
 写好后用 `SPECIES.jellyfish = (config) => ({ … })` 注册，或者直接传给 `species` 选项。
 
 ## 实现原理

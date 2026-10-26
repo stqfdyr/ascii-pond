@@ -236,6 +236,8 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
     depth: rand(0.5, depthMax),
     depthTarget: rand(0.5, depthMax),
     depthMax,
+    young,
+    leaving: false,
     nextDive: rand(6, 18),
     nextSurface: rand(3, 14),
     nextWake: rand(0, 2),
@@ -260,21 +262,37 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
   });
 }
 
-/** How many koi a pond of this size starts with: `count` adults (auto: 3–6 by area), plus `young`. */
-function seed(pond, species, { count = "auto", young = "auto" }) {
+/** How many koi a pond of this size holds: `count` adults (auto: 3–6 by area), plus `young`. */
+function wanted(pond, { count = "auto", young = "auto" }) {
   const adults = count === "auto" ? clamp(Math.round((pond.width * pond.height) / 240000), 3, 6) : count;
   // Wide screens also get a couple of young koi that keep to the deep water, for depth.
   const juveniles = young === "auto" ? (pond.width >= 1024 ? 2 : 0) : young;
+  return { adults, juveniles };
+}
+
+function seed(pond, species, config) {
+  const { adults, juveniles } = wanted(pond, config);
   for (let i = 0; i < adults + juveniles; i++) spawn(pond, species, { young: i >= adults });
 }
 
-/** A pond that grew a lot gets more fish; they start off-screen and swim in, so nothing pops in. */
-function grow(pond, species, before, { max = MAX_KOI }) {
-  const area = pond.width * pond.height;
-  const mine = () => pond.creatures.filter((c) => c.species === species).length;
-  if (area / (before || 1) > 1.35 && mine() < max) {
-    const add = Math.min(2, Math.max(1, Math.round((area - before) / 300000)));
-    for (let i = 0; i < add && mine() < max; i++) spawn(pond, species, { young: Math.random() < 0.4, offscreen: true });
+/**
+ * The window settled at a new size: koi swim in or out to suit it, never popping. Leavers are
+ * called back first; new koi start off-screen; extras, the ones nearest an edge and not after
+ * food, head off it and are dropped once out of sight.
+ */
+function grow(pond, species, config) {
+  const { max = MAX_KOI } = config;
+  const want = wanted(pond, config);
+  let room = max - pond.creatures.filter((c) => c.species === species && !c.leaving).length;
+  for (const young of [false, true]) {
+    const mine = pond.creatures.filter((c) => c.species === species && c.young === young);
+    const staying = mine.filter((c) => !c.leaving);
+    let need = (young ? want.juveniles : want.adults) - staying.length;
+    for (const k of mine) if (need > 0 && room > 0 && k.leaving) { k.leaving = false; need--; room--; }
+    for (; need > 0 && room > 0; need--, room--) spawn(pond, species, { young, offscreen: true });
+    const edge = (k) => Math.min(k.nodes[0], pond.width - k.nodes[0], k.nodes[1], pond.height - k.nodes[1]) + (k.food ? 1e4 : 0);
+    staying.sort((a, b) => edge(a) - edge(b));
+    for (let i = 0; i < -need; i++) { staying[i].leaving = true; setMood(pond, staying[i], "cruise"); }
   }
 }
 
@@ -339,7 +357,7 @@ function step(pond, k, dt) {
   // Until its reaction lands, a koi hasn't noticed the food yet.
   // A koi that heard a splash looks across the whole pond.
   // One not in the mood only takes food that comes right past its nose.
-  const food = k.reactAt > time ? null
+  const food = k.leaving || k.reactAt > time ? null
     : pickFood(pond, k, hx, hy, k.rush > 0 || k.mood === "search" ? Math.hypot(W, H) : time < k.deaf ? L * 0.6 : L * 1.6 + 220);
 
   // Every few minutes something unseen (a shadow, a sound) spooks a koi; one with food on its mind ignores it.
@@ -380,7 +398,7 @@ function step(pond, k, dt) {
       curious = true;
     }
   }
-  if (!fleeing && !food) {
+  if (!fleeing && !food && !k.leaving) {
     if (time > k.moodUntil) setMood(pond, k, pickMood(k));
     const goal = moodGoal(pond, k);
     if (goal) {
@@ -424,13 +442,27 @@ function step(pond, k, dt) {
     }
   }
 
+  // One the pond no longer has room for heads out over the nearest edge; out of sight, it's gone.
+  if (k.leaving) {
+    const edges = [[hx, -1, 0], [W - hx, 1, 0], [hy, 0, -1], [H - hy, 0, 1]];
+    const [, ox, oy] = edges.reduce((a, b) => (b[0] < a[0] ? b : a));
+    const m = L * 0.15;
+    let seen = false;
+    for (let n = 0; n < NODES && !seen; n++) {
+      const x = nodes[n * 2], y = nodes[n * 2 + 1];
+      seen = x > -m && x < W + m && y > -m && y < H + m;
+    }
+    if (!seen) k.gone = true;
+    dx += ox * 3;
+    dy += oy * 3;
+  }
   // Walls: look ahead and turn along them in good time, so a koi wide-arcs round rather than
   // ploughing off-screen; past the edge it always heads back in.
   // Food by the edge still gets taken: a koi after it looks less far ahead.
   const look = L * (chasing ? 0.3 : curious ? 0.5 : 0.6);
   const ax = hx + Math.cos(k.heading) * look, ay = hy + Math.sin(k.heading) * look;
   const ex = Math.max(0, -ax) - Math.max(0, ax - W), ey = Math.max(0, -ay) - Math.max(0, ay - H);
-  const wall = clamp(Math.hypot(ex, ey) / (L * 0.6), 0, 1);
+  const wall = k.leaving ? 0 : clamp(Math.hypot(ex, ey) / (L * 0.6), 0, 1);
   if (wall > 0) {
     const d = Math.hypot(ex, ey), nx = ex / d, ny = ey / d;
     // Turn the way it already leans, so a head-on approach doesn't dither left and right.
@@ -439,7 +471,7 @@ function step(pond, k, dt) {
     dy += (ny + nx * side * 0.6) * wall * 3;
   }
   const over = Math.max(-hx, hx - W, -hy, hy - H);
-  if (over > 0) {
+  if (over > 0 && !k.leaving) {
     const w = clamp(over / (L * 0.3), 0, 1) * 3.5;
     const toX = W / 2 - hx, toY = H / 2 - hy, d = Math.hypot(toX, toY) || 1;
     dx += (toX / d) * w;
@@ -933,14 +965,15 @@ function wake(r, k) {
 
 /**
  * The koi species. `count` adults ("auto": 3–6 by pond area), `young` small ones that keep to the
- * deep ("auto": two on wide screens), at most `max` once the window grows.
+ * deep ("auto": two on wide screens), recounted when the window settles at a new size (adding up
+ * to `max`).
  */
 export function koi(config = {}) {
   const species = {
     name: "koi",
     colors: COLORS,
     seed: (pond) => seed(pond, species, config),
-    grow: (pond, before) => grow(pond, species, before, config),
+    grow: (pond) => grow(pond, species, config),
     splash: (pond, p) => splash(pond, species, p),
     floating: (pond, p) => floating(pond, species, p),
     step,

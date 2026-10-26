@@ -105,7 +105,7 @@ Koi are the first species (`src/koi.js`). A species is an object with these func
   seed(pond) {},                           // create the first ones, push into pond.creatures
   step(pond, creature, dt) {},             // update one creature (120 times a second)
   draw(renderer, creature, time) {},       // draw it into renderer.grid
-  grow(pond, areaBefore) {},               // optional: add more when the window grows
+  grow(pond) {},                           // optional: once a resize holds still 1.5 s, add or remove to suit
   wake(renderer, creature) {},             // optional: stir the water, renderer.stir(x, y, amount)
   splash(pond, pellet) {},                 // optional: food just hit the water
   floating(pond, pellet) {},               // optional: called on every update while food floats
@@ -113,7 +113,7 @@ Koi are the first species (`src/koi.js`). A species is an object with these func
 ```
 
 Each creature needs `species` (this object) and `depth` (0 = bottom, 1 = surface; deeper ones
-are drawn first). Register it with `SPECIES.jellyfish = (config) => ({ … })`, or pass it straight
+are drawn first); set `gone = true` on one to remove it after the step. Register it with `SPECIES.jellyfish = (config) => ({ … })`, or pass it straight
 to the `species` option.
 
 ## How it works

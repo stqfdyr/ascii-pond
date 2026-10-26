@@ -11,11 +11,13 @@ import { koi } from "./koi.js";
 /**
  * Species available by name. A species is an object with:
  *   name, colors: { dark, light }                     extra palette keys it draws with
- *   seed(pond)  grow(pond, areaBefore)                add creatures to pond.creatures
+ *   seed(pond)  grow?(pond)                           add creatures to pond.creatures; grow runs once
+ *                                                     a resize has settled, to suit the new size
  *   step(pond, creature, dt)                          move one creature one sim step
  *   draw(renderer, creature, time)                    write its cells into renderer.grid
  *   wake?(renderer, creature)  splash?(pond, pellet)  floating?(pond, pellet)
- * Each creature needs `species` and a `depth` (0 deep … 1 surface; draw order).
+ * Each creature needs `species` and a `depth` (0 deep … 1 surface; draw order); setting `gone`
+ * on one removes it after the step.
  */
 export const SPECIES = { koi };
 
@@ -63,6 +65,8 @@ const STEP = 1 / 120, MAX_STEPS = 8;
 /** The wake was tuned as one deposit + blur per 60 Hz frame; it runs on sim time so refresh rate doesn't change it. */
 const WAKE_STEP = 1 / 60;
 const RIPPLE_SPEED = 52;
+/** Seconds the window must hold still before creatures are counted again: a drag may yet reverse. */
+const RESIZE_SETTLE = 1.5;
 const PELLET_LIFE = 14, PELLET_SINK = 9, PELLET_MAX = 24;
 const BITE_LIFE = 0.45;
 const THROW_RADIUS = 34;
@@ -92,14 +96,15 @@ export class Pond {
     /** Page content creatures steer around, in canvas space. */
     this.avoid = [];
     this.nextId = 1;
+    this.settleAt = 0;
   }
 
   resize(width, height) {
     const first = this.width === 0;
-    const before = this.width * this.height;
     this.width = width;
     this.height = height;
-    for (const s of this.species) first ? s.seed(this) : s.grow?.(this, before);
+    if (first) for (const s of this.species) s.seed(this);
+    else this.settleAt = this.time + RESIZE_SETTLE;
   }
 
   /** A loose handful thrown at (x, y): each pellet lands a beat apart, then drifts and sinks. */
@@ -119,7 +124,12 @@ export class Pond {
 
   step(dt) {
     this.time += dt;
+    if (this.settleAt && this.time >= this.settleAt) {
+      this.settleAt = 0;
+      for (const s of this.species) s.grow?.(this);
+    }
     for (const c of this.creatures) c.species.step(this, c, dt);
+    compact(this.creatures, (c) => !c.gone);
 
     const t = this.time;
     compact(this.pellets, (p) => t - p.born < PELLET_LIFE);
