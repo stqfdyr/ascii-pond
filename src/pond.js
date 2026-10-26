@@ -88,12 +88,10 @@ export class Pond {
     this.width = 0;
     this.height = 0;
     this.time = 0;
-    this.pointer = { x: 0, y: 0, speed: 0, active: false };
+    this.pointer = { x: 0, y: 0, active: false };
     /** Page content creatures steer around, in canvas space. */
     this.avoid = [];
     this.nextId = 1;
-    /** Moving the mouse to throw food isn't a threat, so swipes don't startle just after a feed. */
-    this.lastFeed = -Infinity;
   }
 
   resize(width, height) {
@@ -106,7 +104,6 @@ export class Pond {
 
   /** A loose handful thrown at (x, y): each pellet lands a beat apart, then drifts and sinks. */
   feed(x, y) {
-    this.lastFeed = this.time;
     this.ripples.push({ x, y, born: this.time, strength: 0.35 });
     const count = Math.min(5 + Math.floor(Math.random() * 3), PELLET_MAX - this.pellets.length);
     for (let k = 0; k < count; k++) {
@@ -122,7 +119,6 @@ export class Pond {
 
   step(dt) {
     this.time += dt;
-    this.pointer.speed *= Math.exp(-dt * 8);
     for (const c of this.creatures) c.species.step(this, c, dt);
 
     const t = this.time;
@@ -667,7 +663,7 @@ export function mount(target, options = {}) {
     return { x, y, inside: x >= 0 && y >= 0 && x <= rect.width && y <= rect.height };
   }
 
-  let lastPointerTime = 0, lastTouchRipple = 0;
+  let lastTouchRipple = 0;
   function onMove(e) {
     const { x, y, inside } = toLocal(e);
     // A finger has no hover, so it leaves ripples behind it instead.
@@ -678,10 +674,6 @@ export function mount(target, options = {}) {
       }
     }
     const p = pond.pointer;
-    const elapsed = Math.max(1, e.timeStamp - lastPointerTime) / 1000;
-    const speed = Math.hypot(x - p.x, y - p.y) / elapsed;
-    p.speed += (Math.min(speed, 5000) - p.speed) * 0.5;
-    lastPointerTime = e.timeStamp;
     p.x = x; p.y = y;
     p.active = inside && e.pointerType !== "touch";
   }
@@ -698,7 +690,7 @@ export function mount(target, options = {}) {
     pond.feed(x, y);
   }
 
-  const calm = () => { pond.pointer.active = false; pond.pointer.speed = 0; };
+  const calm = () => { pond.pointer.active = false; };
   const onOsTheme = () => { if (themeMode === "auto") renderer.setTheme(prefersLight.matches); };
 
   let last = performance.now(), acc = 0, wakeAcc = 0, measured = 0, running = true;

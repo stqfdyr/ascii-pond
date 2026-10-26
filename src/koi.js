@@ -14,8 +14,6 @@ const MAX_BEND = 0.16;
 
 const MAX_KOI = 8;                           // a bigger window may add koi, up to this
 const RUSH_RANGE = 650;                      // koi inside this range bolt for a splash
-const STARTLE_SPEED = 1100;                  // px/s of cursor travel that spooks a koi
-const FEED_CALM = 2;                         // seconds after feeding in which swipes don't startle
 const GLIDE_DRAG = 0.45;                     // 1/s: a coasting koi loses half its speed in ~1.5 s
 const FULL_BEAT = 5;                         // a full tail beat holds this many × cruise speed
 
@@ -213,8 +211,10 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
     wander: 0,
     curiosity: rand(0.35, 1),
     energy: rand(0.7, 1.3),
+    tempo: rand(0.88, 1.12),
     appetite: rand(0.55, 1),
-    hunger: 1,
+    // Some come to the pond hungry, some have eaten: not every koi wants the next handful.
+    hunger: rand(0.45, 1),
     mood: "cruise",
     moodUntil: rand(2, 8),
     vMood: 1,
@@ -241,11 +241,13 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
     nextWake: rand(0, 2),
     rush: 0,
     reactAt: 0,
+    drive: 0,
     deaf: 0,
     food: null,
     beat: 0,
     finPhase: rand(0, TAU),
     startle: 0,
+    nextSpook: rand(60, 300),
     fleeX: 0,
     fleeY: 0,
     gulp: 0,
@@ -290,10 +292,13 @@ function splash(pond, species, p) {
     if (d >= RUSH_RANGE) continue;
     if (k.food) k.rush = Math.max(k.rush, k.appetite * k.hunger);
     else if (k.reactAt <= t && t > k.deaf) {
-      // A koi that is far, full or idle may let this handful go; it still finds food it swims past.
-      if (k.appetite * k.hunger < 0.5 && d > RUSH_RANGE * 0.4 && Math.random() < 0.6) { k.deaf = t + rand(4, 10); continue; }
-      // Reaction times trail off: most koi turn within a second, a few take two or three.
-      k.reactAt = t + 0.2 + 0.7 * (d / RUSH_RANGE) + 0.5 * (1 - k.curiosity) + (k.mood === "rest" ? 0.5 : 0) + Math.random() ** 2 * 1.4;
+      // How much it wants this handful: appetite, how much it has just eaten, and the moment.
+      const drive = clamp(k.appetite * k.hunger * rand(0.75, 1.2), 0, 1);
+      // One far, full or idle may let it go; it still takes food it swims past.
+      if (drive < 0.4 && d > RUSH_RANGE * 0.3 && Math.random() < 0.7) { k.deaf = t + rand(4, 10); continue; }
+      // Hungry koi turn at once; the less it wants it, the longer it takes to bother.
+      k.drive = drive;
+      k.reactAt = t + 0.12 + 0.5 * (d / RUSH_RANGE) + 1.2 * (1 - drive) + 0.3 * (1 - k.curiosity) + (k.mood === "rest" ? 0.4 : 0) + rand(0, 0.45) + Math.random() ** 3 * 0.8;
     }
   }
   // Nobody within earshot: the nearest koi still comes, a beat later, so a throw is never ignored.
@@ -329,7 +334,7 @@ function step(pond, k, dt) {
   dy += Math.sin(k.heading + k.wander) * roam;
 
   // How hard it goes for food is its own: appetite, and how much it has just eaten.
-  if (k.reactAt && time >= k.reactAt) { k.rush = Math.max(k.rush, k.appetite * k.hunger); k.reactAt = 0; }
+  if (k.reactAt && time >= k.reactAt) { k.rush = Math.max(k.rush, k.drive); k.reactAt = 0; }
   k.hunger = Math.min(1, k.hunger + dt / 90);
   // Until its reaction lands, a koi hasn't noticed the food yet.
   // A koi that heard a splash looks across the whole pond.
@@ -337,31 +342,15 @@ function step(pond, k, dt) {
   const food = k.reactAt > time ? null
     : pickFood(pond, k, hx, hy, k.rush > 0 || k.mood === "search" ? Math.hypot(W, H) : time < k.deaf ? L * 0.6 : L * 1.6 + 220);
 
-  // A fast swipe close by spooks a koi: it bolts away, then calms over a couple of seconds.
-  // A koi already going for food ignores it; feeding beats fear, and clicking moves the mouse fast.
-  const pointerD = Math.hypot(pointer.x - hx, pointer.y - hy);
-  const feeding = time - pond.lastFeed < FEED_CALM;
-  if (!food && !feeding && pointer.active && pointer.speed > STARTLE_SPEED && pointerD < L * 0.9) {
-    if (k.startle < 0.8) {
-      // A fresh scare is a C-start: an instant sprint here, a snap turn below.
-      k.speed = Math.max(k.speed, cruise * 2.5);
-      k.beat = 1;
-      // Close neighbours catch it, more mildly.
-      for (const o of pond.creatures) {
-        if (o === k || o.species !== k.species || o.startle >= 0.5 || Math.hypot(o.nodes[0] - hx, o.nodes[1] - hy) > L * 1.2) continue;
-        o.startle = 0.75;
-        o.fleeX = pointer.x;
-        o.fleeY = pointer.y;
-      }
-    }
-    k.startle = 1;
-    k.fleeX = pointer.x;
-    k.fleeY = pointer.y;
+  // Every few minutes something unseen (a shadow, a sound) spooks a koi; one with food on its mind ignores it.
+  if (time > k.nextSpook) {
+    k.nextSpook = time + rand(120, 360);
+    if (!food && !k.reactAt && k.mood !== "search") { const a = rand(0, TAU); spook(pond, k, hx + Math.cos(a) * L * 0.5, hy + Math.sin(a) * L * 0.5); }
   }
   k.startle = Math.max(0, k.startle - dt * 0.6);
   const fleeing = k.startle > 0.3 && !food;
 
-  let chasing = false, curious = false, closing = 0, far = 0, first = false;
+  let chasing = false, curious = false, closing = 0, far = 0, first = false, rival = false;
   if (fleeing) {
     const ox = hx - k.fleeX, oy = hy - k.fleeY, d = Math.hypot(ox, oy) || 1;
     dx += (ox / d) * 4 * k.startle;
@@ -376,6 +365,9 @@ function step(pond, k, dt) {
     far = clamp((d - L) / (L * 2), 0, 1);
     // Of all the koi after this pellet, the nearest shoulders through the scrum to take it.
     first = !pond.creatures.some((o) => o !== k && o.species === k.species && o.food === food && Math.hypot(food.x - o.nodes[0], food.y - o.nodes[1]) < d);
+    // Another koi about as close is after the same pellet: a race.
+    rival = pond.creatures.some((o) => o !== k && o.species === k.species && o.food === food &&
+      Math.abs(Math.hypot(food.x - o.nodes[0], food.y - o.nodes[1]) - d) < d * 0.5 + L * 0.3);
   } else if (pointer.active) {
     const tx = pointer.x - hx, ty = pointer.y - hy, d = Math.hypot(tx, ty) || 1;
     const range = 300;
@@ -481,7 +473,12 @@ function step(pond, k, dt) {
   const turned = clamp(k.turnRate * dt, -Math.abs(err), Math.abs(err));
   k.heading += turned;
   k.turn += (turned / dt - k.turn) * Math.min(1, dt * 3);
-  if (k.wasChasing && !chasing && !fleeing) setMood(pond, k, "search");
+  if (k.wasChasing && !chasing && !fleeing) {
+    setMood(pond, k, "search");
+    // The food is gone, but it carries on a moment at the pace it had, each for its own while.
+    k.dashUntil = time + rand(0.2, 1.5);
+    k.dashV = (k.speed / cruise) * rand(0.7, 1);
+  }
   // Spotting food on its own (searching, or passing by) perks it up as much as a splash would.
   if (chasing && !k.wasChasing) k.rush = Math.max(k.rush, k.appetite * k.hunger * 0.8);
   k.wasChasing = chasing;
@@ -506,9 +503,12 @@ function step(pond, k, dt) {
   // Speed comes from the tail: each beat pushes, the water drags. Cruising is a steady easy
   // beat, not on-off; the speed it wants also drifts slowly, so it never holds one pace.
   k.pace = clamp(k.pace * (1 - dt / 5) + (Math.random() - 0.5) * 0.4 * Math.sqrt(dt), -0.25, 0.25);
+  const aligned = 1 - smoothstep(0.2, 0.7, Math.abs(err));
   const target = Math.min(FULL_BEAT, fleeing ? 3.2 * (1 + k.rush * 0.8)
-    // Dart in, then slow to take it; slower still when the food is off to one side, to turn in on it.
-    : chasing ? (1.8 + 0.8 * k.rush) * (1 + k.rush * 0.5) * (1 + 0.4 * far) * (1 - 0.35 * closing) * (1 - 0.6 * closing * smoothstep(0.3, 1.2, Math.abs(err)))
+    // A hungry koi bolts (~4× cruise), a full one ambles over (~1.3×); a race speeds both up. Close
+    // in, lined up, it lunges to take it; off to one side, it slows to turn in on it.
+    : chasing ? (1.2 + 3 * k.rush * k.rush) * (1 + 0.3 * far) * (rival ? 1.35 : 1) *
+      (1 + 0.4 * closing * aligned * k.rush) * (1 - 0.6 * closing * (1 - aligned))
     : dashing ? k.dashV
     // A slow koi at a wall picks up speed to turn: it can only turn as fast as it swims.
     : Math.max(curious ? 1.3 : 0, over > 0 ? 1 : 0.9 * wall, k.vMood * (1 + k.pace) * (1 + k.rush * 0.5))) * cruise;
@@ -526,7 +526,8 @@ function step(pond, k, dt) {
   // Pectorals spread to brake hard when it overshoots what it wants.
   const brake = k.speed > target * 1.3 ? (urgent ? 1.6 : 0.25) : 0;
   k.speed = Math.max(0, k.speed + (thrust * k.beat - (drag + brake) * k.speed) * dt);
-  k.phase += dt * (0.6 + k.beat * (2.2 + k.speed / 11));
+  // Each koi beats its tail at its own tempo, so two pacing together still drift out of step.
+  k.phase += dt * (0.6 + k.beat * (2.2 + k.speed / 11)) * k.tempo;
   k.finPhase += dt * 2.4;
   k.gulp += ((chasing && closing > 0.55 ? 1 : 0) - k.gulp) * Math.min(1, dt * 6);
 
@@ -563,12 +564,33 @@ function step(pond, k, dt) {
     pond.ripples.push({ x: nodes[0], y: nodes[1], born: time, strength: 0.6 });
     pond.bites.push({ x: nodes[0], y: nodes[1], born: time });
     k.nextSurface = time + rand(6, 16);
-    k.hunger = Math.max(0.6, k.hunger - 0.06);
+    // A mouthful whets it while food is about; each one also fills it up a little.
+    k.rush = Math.min(1, k.rush + 0.2 * k.hunger);
+    k.hunger = Math.max(0.45, k.hunger - 0.07);
   } else if (time > k.nextSurface) {
     // Now and then it mouths the surface on its own, without food.
     pond.ripples.push({ x: nodes[0], y: nodes[1], born: time, strength: 0.3 });
     k.nextSurface = time + (k.mood === "surface" ? rand(1.5, 4) : rand(8, 20));
   }
+}
+
+/**
+ * A scare from (x, y): a C-start, an instant sprint here and a snap turn away in step(); it calms
+ * over a couple of seconds. Close neighbours catch it, more mildly.
+ */
+function spook(pond, k, x, y) {
+  const hx = k.nodes[0], hy = k.nodes[1], L = k.length;
+  k.speed = Math.max(k.speed, (12 + L * 0.05) * 2.5);
+  k.beat = 1;
+  for (const o of pond.creatures) {
+    if (o === k || o.species !== k.species || o.startle >= 0.5 || o.food || o.reactAt || Math.hypot(o.nodes[0] - hx, o.nodes[1] - hy) > L * 1.2) continue;
+    o.startle = 0.75;
+    o.fleeX = x;
+    o.fleeY = y;
+  }
+  k.startle = 1;
+  k.fleeX = x;
+  k.fleeY = y;
 }
 
 /** A weighted draw over the idle moods, leaning on the koi's energy; never the one it is in. */
@@ -635,25 +657,38 @@ function moodGoal(pond, k) {
   return null;
 }
 
-/** Keep the current target while it lasts; only switch for a pellet less than half as far away. */
+/**
+ * Keep the current target while it lasts; only switch for a pellet less than half as far away, or
+ * when a nearer koi has the same one in its sights and a free one is about. Without that, every
+ * koi picked the same pellet out of a handful and they jammed over it while the rest sank.
+ */
 function pickFood(pond, k, x, y, range) {
   if (k.food && !pond.pellets.includes(k.food)) k.food = null;
-  const nearest = nearestPellet(pond, x, y, range);
+  const nearest = nearestPellet(pond, k, x, y, range);
   if (!k.food) return (k.food = nearest);
   const current = Math.hypot(k.food.x - x, k.food.y - y);
   if (current > range * 1.3) k.food = nearest;
   else if (nearest && Math.hypot(nearest.x - x, nearest.y - y) < current * 0.5) k.food = nearest;
+  else if (nearest && nearest !== k.food && claimed(pond, k, k.food, current * current) && !claimed(pond, k, nearest, (nearest.x - x) ** 2 + (nearest.y - y) ** 2)) k.food = nearest;
   return k.food;
 }
 
-function nearestPellet(pond, x, y, range) {
-  let best = null, bestD = range * range;
+/** Whether another koi of its kind, nearer than √d2, is already going for pellet `p`. */
+function claimed(pond, k, p, d2) {
+  return pond.creatures.some((o) => o !== k && o.species === k.species && o.food === p && (p.x - o.nodes[0]) ** 2 + (p.y - o.nodes[1]) ** 2 < d2);
+}
+
+/** The nearest landed pellet in range that no nearer koi has claimed; failing that, the nearest at all. */
+function nearestPellet(pond, k, x, y, range) {
+  let best = null, bestD = range * range, taken = null, takenD = range * range;
   for (const p of pond.pellets) {
     if (!p.landed) continue;
     const d = (p.x - x) ** 2 + (p.y - y) ** 2;
-    if (d < bestD) { bestD = d; best = p; }
+    if (d >= bestD && d >= takenD) continue;
+    if (claimed(pond, k, p, d)) { if (d < takenD) { takenD = d; taken = p; } }
+    else if (d < bestD) { bestD = d; best = p; }
   }
-  return best;
+  return best || taken;
 }
 
 // ─── drawing ────────────────────────────────────────────────────────────────

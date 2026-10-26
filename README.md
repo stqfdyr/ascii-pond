@@ -1,7 +1,7 @@
 # ascii-pond
 
-Fish drawn as monospace glyph tiles swim behind your page. They follow the cursor, scatter
-when it moves fast, and come up to eat when you click the water. No build step, no dependencies.
+Fish drawn as monospace glyph tiles swim behind your page. They drift over to the cursor and
+come up to eat when you click the water. No build step, no dependencies.
 
 There are two ways to use it:
 
@@ -113,9 +113,11 @@ or pass the object straight in `species`.
 - Behaviour is layered. Each koi has its own temperament. It moves between moods (cruise,
   glide, explore, rest, surface, follow), each lasting a random time, with the odd dash. Speed comes
   from tail thrust against drag, and turns ease in proportion to how far off course it is.
-  Food draws staggered reactions, and each koi winds down on its own.
-- Fast cursor swipes startle the koi (a C-start). A finger drag leaves a wake. Reduced motion
-  runs at 0.2× and feeding still works. Forced-colours mode hides the pond.
+  Each koi arrives with its own hunger: the hungry bolt for food and race each other, the full
+  amble over or sit it out, every mouthful whets it a little more, and each winds down on its own.
+- Now and then a koi takes fright at nothing in particular and bolts (a C-start), and close
+  neighbours flinch with it. A finger drag leaves a wake. Reduced motion runs at 0.2× and feeding
+  still works. Forced-colours mode hides the pond.
 
 ## Files
 
