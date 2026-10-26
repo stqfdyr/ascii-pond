@@ -2,140 +2,150 @@
 
 [简体中文](README.md) | English
 
-Fish drawn as monospace glyph tiles swim behind your page. They drift over to the cursor and
-come up to eat when you click the water. No build step, no dependencies.
+Koi made of text characters swim behind your web page. Move the mouse and they come over;
+click the water to drop food. Plain JavaScript: no build step, no dependencies.
 
 Demo: <https://ascii.3301921.xyz/>
 
-There are two ways to use it:
+## Quick start
 
-- **As an embed**: one element (or one function call) adds a pond to any page or blog, behind
-  everything or in a box.
-- **As a template**: `index.html` is a small one-page site (nav, three views, dark/paper theme
-  with a live wipe) built on the embed. Fork it, change the `<title>` and the copy.
-
-## Run it
-
-```sh
-python3 -m http.server 8899
-# http://127.0.0.1:8899/index.html           the template
-# http://127.0.0.1:8899/examples/embed.html  a pond in a blog post's header
-```
-
-It needs http, not `file://`: it is ES modules, and the web font won't load from disk.
-
-## Embed
+Add two lines to your page:
 
 ```html
-<script type="module" src="/path/to/src/pond.js"></script>
-
-<!-- behind the whole page -->
+<script type="module" src="https://cdn.jsdelivr.net/gh/stqfdyr/ascii-pond@main/src/pond.js"></script>
 <ascii-pond fixed></ascii-pond>
+```
 
-<!-- or in a box: the element fills itself, so give it a size -->
+Now there's a pond behind the whole page. For a pond in one spot (say, a post header), drop
+`fixed` and give it a height:
+
+```html
 <ascii-pond style="height: 320px"></ascii-pond>
 ```
 
-| Attribute | |
-|---|---|
-| `species` | comma-separated species names, default `koi` |
-| `count`, `young` | how many adults and young of each species (default: by pond size) |
-| `theme` | `auto` (follow the OS, live), `dark` or `light` |
-| `avoid` | CSS selector of content the fish swim around and fade under, default `[data-pond-avoid]` |
-| `fixed` | full-viewport background instead of filling the element |
-| `no-feed` | clicks don't throw food |
+Add `data-pond-avoid` to your content and the fish swim around it, fading out under the text so
+it stays readable:
 
-From a script:
+```html
+<article data-pond-avoid>…</article>
+```
+
+To avoid the CDN, copy `src/` into your site and point `src` at it.
+
+## Use the template
+
+`index.html` is a ready-made one-page site: top nav, three pages, dark/light switch. Fork the
+repo, change the title and the text, done.
+
+Preview it over http (ES modules don't load from a double-clicked file):
+
+```sh
+python3 -m http.server 8899
+# template:      http://127.0.0.1:8899/
+# embed example: http://127.0.0.1:8899/examples/embed.html
+```
+
+## Options
+
+### Attributes
+
+| Attribute | What it does |
+|---|---|
+| `fixed` | fill the window, as the page background |
+| `theme` | `auto` (follow the system, default), `dark`, `light` |
+| `count`, `young` | how many big and small fish; default depends on pond size |
+| `species` | which creatures, comma-separated; default `koi` |
+| `avoid` | CSS selector for elements the fish swim around; default `[data-pond-avoid]` |
+| `no-feed` | clicks don't drop food |
+
+### From JavaScript
 
 ```js
 import { mount } from "./src/pond.js";
 
 const pond = mount(document.body, {
-  species: [{ type: "koi", count: 4, young: 1 }],
   theme: "auto",
-  palette: { dark: { page: [16, 16, 20] } },   // match your page background
+  species: [{ type: "koi", count: 4, young: 1 }],
+  palette: { dark: { page: [16, 16, 20] } },  // set to your page background
 });
-pond.feed(200, 150);                 // throw food at canvas coordinates
-pond.setTheme(true, { x, y });       // to light, wiping out from (x, y)
-pond.destroy();
+
+pond.feed(200, 150);            // drop food at (200, 150)
+pond.setTheme(true, { x, y });  // switch to light, spreading out from (x, y)
+pond.destroy();                 // remove the pond
 ```
 
-`mount(target, options)` takes a `<canvas>` to draw into, or any element to put one in. Mounted
-on `<body>` it is a fixed background. It returns `{ pond, renderer, canvas, feed, setTheme, measure, destroy }`.
+`mount` takes a `<canvas>` or any element (it adds a canvas inside). Pass `document.body` and it
+fills the page. It returns `{ pond, renderer, canvas, feed, setTheme, measure, destroy }`.
 
-| Option | Default | |
+| Option | Default | What it does |
 |---|---|---|
-| `species` | `["koi"]` | names, `{ type, ...config }`, or species objects |
-| `theme` | `"auto"` | `"auto"`, `"dark"`, `"light"`; `setTheme()` takes over from `auto` |
-| `avoid` | `"[data-pond-avoid]"` | content to steer around and dim under; `null` for none |
-| `ignore` | links, buttons, inputs, `[data-pond-ignore]` | clicks on these never feed |
-| `feed` | `true` | click the water to throw food |
-| `fixed` | on `<body>` | full-viewport background |
-| `speed` | `1` | simulation speed; reduced motion multiplies it by 0.2 |
-| `palette` | `{}` | overrides per theme, e.g. `{ dark: { page, bg, water, pellet, … } }` (see `DARK` in `src/pond.js`) |
-| `onFrame` | | called after each frame with the instance |
+| `species` | `["koi"]` | as the attribute; also `{ type, count, young }` or a species object |
+| `theme` | `"auto"` | as the attribute; after `setTheme()` it stops following the system |
+| `avoid` | `"[data-pond-avoid]"` | as the attribute; `null` turns it off |
+| `ignore` | links, buttons, inputs, `[data-pond-ignore]` | clicks here don't drop food |
+| `feed` | `true` | click to drop food |
+| `fixed` | on when mounted on `<body>` | fill the window |
+| `speed` | `1` | swim speed; drops to 0.2× when the system asks for reduced motion |
+| `palette` | `{}` | colour overrides; see `DARK` in `src/pond.js` for the keys |
+| `onFrame` | | called after each frame |
 
-Mark your content so the fish treat it as an obstacle, not as water:
+The canvas is transparent and the tiles are blended toward `bg`, so set `page` and `bg` in
+`palette` close to your page background, or the pond won't match the page.
 
-```html
-<article data-pond-avoid>…</article>   <!-- fish swim around it and fade beneath its text -->
-<div data-pond-ignore>…</div>          <!-- clicks here never feed -->
-```
+## Add a creature
 
-The canvas is transparent and the tiles are mixed toward the palette's `bg`, so set `page` and
-`bg` close to your page's background colour.
-
-## Species
-
-Each kind of creature is a module. `src/koi.js` is the first: body outline, markings
-(kohaku, sanke, tancho), behaviour and drawing. A species is an object:
+Koi are the first species (`src/koi.js`). A species is an object with these functions:
 
 ```js
 {
   name: "jellyfish",
-  colors: { dark: { … }, light: { … } },   // extra palette keys it draws with
-  seed(pond) {},                            // push its first creatures into pond.creatures
-  grow(pond, areaBefore) {},                // optional: more when the window grows
-  step(pond, creature, dt) {},              // move one creature one 1/120 s step
-  draw(renderer, creature, time) {},        // write its cells into renderer.grid
-  wake(renderer, creature) {},              // optional: renderer.stir(x, y, amount)
-  splash(pond, pellet) {},                  // optional: a pellet just landed
-  floating(pond, pellet) {},                // optional: each step a pellet floats
+  colors: { dark: { … }, light: { … } },  // extra colours it uses
+  seed(pond) {},                           // create the first ones, push into pond.creatures
+  step(pond, creature, dt) {},             // update one creature (120 times a second)
+  draw(renderer, creature, time) {},       // draw it into renderer.grid
+  grow(pond, areaBefore) {},               // optional: add more when the window grows
+  wake(renderer, creature) {},             // optional: stir the water, renderer.stir(x, y, amount)
+  splash(pond, pellet) {},                 // optional: food just hit the water
+  floating(pond, pellet) {},               // optional: called on every update while food floats
 }
 ```
 
-Every creature needs `species` (the object above) and a `depth` from 0 (deep) to 1 (surface).
-Deeper ones are drawn first. Register a species with `SPECIES.jellyfish = (config) => ({ … })`,
-or pass the object straight in `species`.
+Each creature needs `species` (this object) and `depth` (0 = bottom, 1 = surface; deeper ones
+are drawn first). Register it with `SPECIES.jellyfish = (config) => ({ … })`, or pass it straight
+to the `species` option.
 
 ## How it works
 
-- A fixed 120 Hz simulation, so motion is the same at 60, 120 or 144 Hz. The wake also runs on sim time.
-- A koi is a 20-node spine that follows its head. Each screen cell is projected onto the spine
-  and classified as body, fin, eye or barbel, then drawn as a tile with a glyph etched on it.
-  Markings are pinned to body coordinates, so the pattern rides with the skin.
-- Behaviour is layered. Each koi has its own temperament. It moves between moods (cruise,
-  glide, explore, rest, surface, follow), each lasting a random time, with the odd dash. Speed comes
-  from tail thrust against drag, and turns ease in proportion to how far off course it is.
-  Each koi arrives with its own hunger: the hungry bolt for food and race each other, the full
-  amble over or sit it out, every mouthful whets it a little more, and each winds down on its own.
-- Now and then a koi takes fright at nothing in particular and bolts (a C-start), and close
-  neighbours flinch with it. A finger drag leaves a wake. Reduced motion runs at 0.2× and feeding
-  still works. Forced-colours mode hides the pond.
+- The simulation always runs 120 steps a second, so motion looks the same on 60 Hz and 144 Hz screens.
+- Each koi is a 20-segment spine that follows its head. Every screen cell is checked against it
+  (body, fin, eye or barbel) and drawn as a tile with a character on it. Markings stick to the
+  body, so they bend with the fish.
+- Each fish has its own temperament and switches between cruising, gliding, exploring, resting,
+  rising and following another fish, with the odd sudden dash. Hungry fish fight over food;
+  full ones can't be bothered.
+- Now and then a fish startles at nothing and darts off, and its neighbours flinch. Dragging a
+  finger across the water leaves ripples.
+- With reduced motion on, the fish swim slower and feeding still works. In forced-colours (high
+  contrast) mode the pond is hidden.
 
 ## Files
 
-| | |
+| File | Contents |
 |---|---|
-| `src/pond.js` | engine: pond, water, renderer, theme wipe, `mount()`, `<ascii-pond>` |
-| `src/koi.js` | the koi species |
-| `src/util.js` | shared math |
-| `index.html` | the one-page template |
-| `examples/embed.html` | embedding in a page |
-| `fonts/` | Geist Mono (SIL OFL 1.1, `fonts/GEIST-LICENSE`), used by the template |
+| `src/pond.js` | engine: pond, water, rendering, theme switch, `mount()`, `<ascii-pond>` |
+| `src/koi.js` | koi |
+| `src/util.js` | shared maths |
+| `index.html` | one-page template |
+| `examples/embed.html` | embed example |
+| `fonts/` | Geist Mono, used by the template |
 
-Needs a current browser: ES modules, custom elements, `ResizeObserver`, CSS `color-mix()` (the template).
+Needs ES modules, custom elements and `ResizeObserver`; the template also uses CSS `color-mix()`.
+Any mainstream browser from the last few years works.
+
+## Thanks
+
+Thanks to [stackedlol/ascii-sharks](https://github.com/stackedlol/ascii-sharks) for the inspiration.
 
 ## License
 
-MIT, see [`LICENSE`](LICENSE). The bundled font, Geist Mono, is under the SIL Open Font License 1.1 ([`fonts/GEIST-LICENSE`](fonts/GEIST-LICENSE)).
+MIT, see [`LICENSE`](LICENSE). The bundled Geist Mono font is under the SIL OFL 1.1, see [`fonts/GEIST-LICENSE`](fonts/GEIST-LICENSE).
