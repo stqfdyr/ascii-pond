@@ -214,7 +214,7 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
     tempo: rand(0.88, 1.12),
     appetite: rand(0.55, 1),
     // A fresh pond hasn't been fed yet, so the first handful gets a real rush; eating spreads them out.
-    hunger: rand(0.8, 1),
+    hunger: rand(0.65, 1),
     mood: "cruise",
     moodUntil: rand(2, 8),
     vMood: 1,
