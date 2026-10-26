@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embedding ascii-pond</title>
+<style>
+  body { margin: 0; background: #1a1917; color: #fff7f0; font: 16px/1.6 ui-monospace, Menlo, monospace; }
+  article { max-width: 42rem; margin: 0 auto; padding: 0 20px 4rem; }
+  /* The element fills itself: give it a size. */
+  ascii-pond { height: 320px; margin: 0 -20px 2rem; border-bottom: 1px solid #333; }
+  h1 { font-size: 20px; font-weight: 400; }
+  @media (prefers-color-scheme: light) { body { background: #f5f4f1; color: #262523; } }
+</style>
+<script type="module" src="../src/pond.js"></script>
+<article>
+  <ascii-pond species="koi" count="2" young="0"></ascii-pond>
+  <h1 data-pond-avoid>A post with a pond in its header</h1>
+  <p>The pond above is one element: <code>&lt;ascii-pond&gt;</code>. Click the water to feed it.
+  For a pond behind the whole page instead, use <code>&lt;ascii-pond fixed&gt;</code>, or call
+  <code>mount(document.body)</code> from a script.</p>
+</article>

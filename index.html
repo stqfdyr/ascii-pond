@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="An ASCII pond that swims behind the page, follows the cursor and eats when you click the water.">
+<meta name="theme-color" content="#1a1917">
+<link rel="preload" href="./fonts/geist-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  // Before the first paint: a stored choice wins, otherwise follow the OS, so a light
+  // page never flashes dark first.
+  try {
+    var stored = localStorage.getItem("theme");
+    var light = stored ? stored === "light" : matchMedia("(prefers-color-scheme: light)").matches;
+    if (light) document.documentElement.dataset.theme = "light";
+  } catch (e) {}
+</script>
+<title>ASCII Pond</title>
+<style>
+  /* Geist Mono by Vercel, SIL OFL 1.1 — see fonts/GEIST-LICENSE. */
+  @font-face { font-family: "Geist Mono"; src: url("./fonts/geist-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
+  :root {
+    --background-color: #1a1917;     /* the warm black the pond sits on */
+    --foreground-color: #fff7f0;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo,
+            "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+  }
+  /* Native scrollbars, form controls and caret colours follow the theme too. */
+  :root { color-scheme: dark; }
+  :root[data-theme="light"] {
+    --background-color: #f5f4f1;     /* paper: same page the light pond tiles sit on */
+    --foreground-color: #262523;
+    color-scheme: light;
+  }
+  :focus-visible { outline: 1px solid color-mix(in srgb, var(--foreground-color) 45%, transparent);
+                   outline-offset: 3px; border-radius: 2px; }
+  ::selection { background: color-mix(in srgb, var(--foreground-color) 22%, transparent); }
+  /* In forced-colours mode the pond's glyphs turn into unreadable blocks, and it is decoration. */
+  @media (forced-colors: active) { #pond { display: none; } }
+
+  /* The page is the pond: the canvas is transparent, and the tiles are mixed toward a
+     slightly cooler black than the page, which is what gives them an edge. */
+  html, body { margin: 0; height: 100%; background: var(--background-color);
+               color: var(--foreground-color); overflow: hidden;
+               transition: background-color .3s, color .3s; }
+  body { font-family: var(--mono); }
+  canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; }
+
+  nav { position: fixed; inset-inline: 0; top: 0; z-index: 30; display: flex; justify-content: center;
+        gap: 32px; padding-top: 32px; font-size: 13px; transition: color .2s; }
+  nav a { color: inherit; text-decoration: none; opacity: .5; transition: opacity .15s; }
+  nav a:hover, nav a[aria-current] { opacity: 1; }
+  nav button { margin: -16px; padding: 16px; border: 0; background: none; color: inherit;
+               opacity: .5; cursor: pointer; transition: opacity .15s; }
+  nav button:hover, nav button:focus-visible { opacity: 1; outline: none; }
+  /* During the wipe the text colour is driven per frame, so it must not also transition. */
+  :root[data-transition="theme"] :is(nav a, nav button, .quote, .intro > *, .entries li) {
+    transition: none;
+  }
+  nav button svg { display: block; }
+  nav button .moon { display: none; }
+  :root[data-theme="light"] nav button .moon { display: block; }
+  :root[data-theme="light"] nav button .sun { display: none; }
+
+  main { position: relative; z-index: 20; height: 100%; }
+  .view { display: none; }
+  .view[data-active] { display: flex; height: 100%; }
+
+  /* pond: one bottom-left column */
+  .hero { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 40px;
+          padding: 32px 24px 8rem; box-sizing: border-box; }
+  .quote { margin: 0; font-size: 14px; line-height: 1.625; letter-spacing: .02em; opacity: .6;
+           transition: color .3s; }
+  .intro { max-width: 54rem; font-size: 15px; line-height: max(22px, 3vh); transition: color 180ms ease; }
+  .intro h1, .intro p { margin: 0; font-size: inherit; font-weight: 400; }
+  .intro .socials { margin: 13px 0 0; }
+  /* @-mention: the word stays plain, the card carries where it leads. */
+  .cite { position: relative; }
+  .cite > a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px;
+              text-decoration-color: color-mix(in srgb, var(--foreground-color) 35%, transparent); }
+  .cite > a:hover, .cite > a:focus-visible { text-decoration-color: currentColor; }
+  .card { position: absolute; left: -10px; bottom: calc(100% + 8px); z-index: 40; width: 252px;
+          display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; border-radius: 10px;
+          background: color-mix(in srgb, var(--foreground-color) 9%, var(--background-color));
+          border: 1px solid color-mix(in srgb, var(--foreground-color) 15%, transparent);
+          box-shadow: 0 14px 34px color-mix(in srgb, #000 26%, transparent);
+          font-size: 12px; line-height: 1.45; text-align: left; text-decoration: none;
+          opacity: 0; transform: translateY(4px); pointer-events: none;
+          transition: opacity .14s ease, transform .14s ease; }
+  .cite:hover .card, .cite:focus-within .card { opacity: 1; transform: none; }
+  .card b { font-size: 13px; font-weight: 400; }
+  .card .role { opacity: .7; }
+  .card .dates { opacity: .45; font-variant-numeric: tabular-nums; }
+  .card .summary { margin-top: 4px; opacity: .55; }
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+  @media (max-width: 640px) {
+    .card { position: fixed; left: 12px; right: 12px; bottom: 12px; width: auto; transform: translateY(8px); }
+  }
+
+  .ink { color: inherit; text-decoration: underline; text-decoration-thickness: 1px;
+         text-underline-offset: 5px;
+         text-decoration-color: color-mix(in srgb, var(--foreground-color) 35%, transparent);
+         opacity: .6; transition: opacity .15s, text-decoration-color .15s; }
+  .ink:hover, .ink:focus-visible { opacity: 1; text-decoration-color: currentColor; }
+  .sep { opacity: .4; }
+
+  .cursor { display: inline-block; width: .55em; height: 1em; margin-left: .25em;
+            transform: translateY(.15em); background: currentColor;
+            animation: blink 1.2s steps(1) infinite; }
+  @keyframes blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+  @media (prefers-reduced-motion: reduce) { .cursor { animation: none } }
+
+
+  .list { height: 100%; padding: 212px 24px 8rem; box-sizing: border-box; }
+  .entries { margin: 0; padding: 0; list-style: none; font-size: 15px; transition: color .3s; }
+  .entries li::before { content: "•"; margin-right: .6em; }
+
+
+  /* wide screens: a 20vw gutter, so the fish have the middle to swim in */
+  @media (min-width: 1024px) {
+    .hero, .list { padding-left: 20vw; padding-right: 20vw; }
+  }
+  @media (max-height: 720px) {
+    .hero { gap: 24px; padding-top: 5rem; padding-bottom: 3rem; }
+  }
+</style>
+
+<body>
+<canvas id="pond" aria-hidden="true"></canvas>
+
+<nav data-pond-avoid aria-label="Main">
+  <a href="#/">pond</a>
+  <a href="#/projects">projects</a>
+  <a href="#/blog">blog</a>
+  <button type="button" data-pond-ignore role="switch" aria-checked="false" aria-label="Light theme">
+    <svg class="sun" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.6" fill="currentColor"/>
+      <g stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/>
+      </g>
+    </svg>
+    <svg class="moon" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M20.4 15.6A9 9 0 0 1 8.4 3.6a9 9 0 1 0 12 12Z"/>
+    </svg>
+  </button>
+</nav>
+
+<main>
+  <section class="view" data-view="pond" data-active>
+    <div class="hero">
+      <blockquote class="quote" data-pond-avoid>still water,<br>slow fish<span class="cursor"></span></blockquote>
+      <div class="intro" data-pond-avoid>
+        <h1>Hello, I'm Your Name.</h1>
+        <p>A line about what you do, at <span class="cite"><a href="https://example.com/" target="_blank" rel="noopener noreferrer">Somewhere</a><span class="card" aria-hidden="true"><b>Somewhere</b><span class="role">Your role</span><span class="dates">2024–Present</span><span class="summary">Hover cards hold the details.</span></span></span>.</p>
+        <p>Click the water to feed the fish. Swipe fast to startle them.</p>
+        <p class="socials">
+          <a class="ink" href="https://github.com/" target="_blank" rel="noopener noreferrer">github</a><span class="sep"> / </span><a class="ink" href="mailto:you@example.com">email</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" data-view="projects">
+    <div class="list">
+      <ul class="entries" data-pond-avoid>
+        <li><a class="ink" href="#/projects">A project</a></li>
+        <li><a class="ink" href="#/projects">Another project</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="view" data-view="blog">
+    <div class="list">
+      <ul class="entries" data-pond-avoid>
+        <li><a class="ink" href="#/blog">A post</a></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+// The page around the pond: theme toggle with a live wipe, hash routing. The pond itself is
+// src/pond.js; everything it needs from this page is the canvas and the [data-pond-avoid] blocks.
+import { mount } from "./src/pond.js";
+import { clamp, mix } from "./src/util.js";
+
+const canvas = document.getElementById("pond");
+const themeButton = document.querySelector("nav button");
+const THEME_KEY = "theme";
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const prefersLight = matchMedia("(prefers-color-scheme: light)");
+
+/** Storage can throw (blocked cookies, sandboxed frames); the page must run without it. */
+function storedTheme() {
+  try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+}
+
+/** Text that follows the reveal circle; each line is its own node, so it flips as the edge passes. */
+const THEME_TEXT = "nav a, nav button, .quote, .intro > *, .entries li";
+let revealing = false;
+
+function paintThemeText(reveal) {
+  const { x, y, radius, feather, from, to } = reveal;
+  for (const el of document.querySelectorAll(THEME_TEXT)) {
+    const r = el.getBoundingClientRect();
+    const d = Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y);
+    const t = clamp((radius - d) / feather, 0, 1);
+    el.style.color = `rgb(${mix(from.fg, to.fg, t).join(",")})`;
+  }
+}
+
+function afterFrame({ renderer }) {
+  if (renderer.reveal) paintThemeText(renderer.reveal);
+  else if (revealing) {
+    revealing = false;
+    delete document.documentElement.dataset.transition;
+    for (const el of document.querySelectorAll(THEME_TEXT)) el.style.color = "";
+  }
+}
+
+const initialLight = storedTheme() ? storedTheme() === "light" : prefersLight.matches;
+const pond = mount(canvas, { theme: initialLight ? "light" : "dark", onFrame: afterFrame });
+// Debug handle: poke the pond from the console.
+window.asciiPond = pond;
+
+/** Swap the page palette and the pond's, and keep the browser chrome in step; `at` wipes from there. */
+function applyTheme(isLight, at) {
+  document.documentElement.dataset.theme = isLight ? "light" : "dark";
+  themeButton.setAttribute("aria-checked", String(isLight));
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", isLight ? "#f5f4f1" : "#1a1917");
+  pond.setTheme(isLight, at);
+}
+
+/** Flip the theme, wiping from (x, y) with a soft circle. Reduced motion switches straight over. */
+function switchTheme(x, y) {
+  if (revealing) return;
+  const isLight = document.documentElement.dataset.theme !== "light";
+  if (!reducedMotion.matches) {
+    revealing = true;
+    document.documentElement.dataset.transition = "theme";
+  }
+  applyTheme(isLight, { x, y });
+  try { localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); } catch (e) {}
+}
+
+themeButton.addEventListener("click", (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  switchTheme(r.left + r.width / 2, r.top + r.height / 2);
+});
+
+/** The site name is the page's <title>; other views append their name. */
+const SITE_TITLE = document.title;
+const views = [...document.querySelectorAll("[data-view]")];
+const navLinks = [...document.querySelectorAll("nav a")];
+
+function route() {
+  const wanted = location.hash.replace(/^#\/?/, "") || "pond";
+  const active = views.some((v) => v.dataset.view === wanted) ? wanted : "pond";
+  for (const v of views) v.toggleAttribute("data-active", v.dataset.view === active);
+  for (const a of navLinks) {
+    const target = a.getAttribute("href").replace(/^#\/?/, "") || "pond";
+    if (target === active) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
+  document.title = active === "pond" ? SITE_TITLE : `${SITE_TITLE} — ${active}`;
+  pond.measure();
+}
+
+addEventListener("hashchange", route);
+// No stored choice means the page follows the OS, live.
+applyTheme(initialLight);
+prefersLight.addEventListener("change", () => {
+  if (!storedTheme()) applyTheme(prefersLight.matches);
+});
+route();
+</script>

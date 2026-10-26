@@ -1,0 +1,3 @@
+# Local only: test framework (with its snapshots and output) and the docs.
+/test/
+/docs/
