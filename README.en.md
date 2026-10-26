@@ -136,6 +136,7 @@ to the `species` option.
 | `src/koi.js` | koi |
 | `src/util.js` | shared maths |
 | `index.html` | one-page template |
+| `favicon.svg` | the template's tab icon |
 | `examples/embed.html` | embed example |
 | `fonts/` | Geist Mono, used by the template |
 

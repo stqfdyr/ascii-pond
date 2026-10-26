@@ -128,6 +128,7 @@ pond.destroy();                 // 移除池塘
 | `src/koi.js` | 锦鲤 |
 | `src/util.js` | 公用的数学函数 |
 | `index.html` | 单页模板 |
+| `favicon.svg` | 模板的网页图标 |
 | `examples/embed.html` | 嵌入示例 |
 | `fonts/` | 模板用的 Geist Mono 字体 |
 
