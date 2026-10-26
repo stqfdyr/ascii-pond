@@ -213,8 +213,8 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
     energy: rand(0.7, 1.3),
     tempo: rand(0.88, 1.12),
     appetite: rand(0.55, 1),
-    // Some come to the pond hungry, some have eaten: not every koi wants the next handful.
-    hunger: rand(0.45, 1),
+    // A fresh pond hasn't been fed yet, so the first handful gets a real rush; eating spreads them out.
+    hunger: rand(0.8, 1),
     mood: "cruise",
     moodUntil: rand(2, 8),
     vMood: 1,
