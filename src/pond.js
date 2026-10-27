@@ -703,7 +703,9 @@ export function mount(target, options = {}) {
   const calm = () => { pond.pointer.active = false; };
   const onOsTheme = () => { if (themeMode === "auto") renderer.setTheme(prefersLight.matches); };
 
-  let last = performance.now(), acc = 0, wakeAcc = 0, measured = 0, running = true;
+  let last = performance.now(), acc = 0, wakeAcc = 0, measured = 0, running = true, scrolled = false;
+  // Copy moves under a fixed pond on scroll: re-measure on the next frame, not the next periodic one.
+  const onScroll = () => { scrolled = true; };
   const instance = {
     pond, renderer, canvas,
     feed: (x, y) => pond.feed(x, y),
@@ -720,6 +722,7 @@ export function mount(target, options = {}) {
       removeEventListener("pointermove", onMove);
       removeEventListener("click", onClick);
       removeEventListener("blur", calm);
+      removeEventListener("scroll", onScroll, { capture: true });
       document.documentElement.removeEventListener("pointerleave", calm);
       prefersLight.removeEventListener("change", onOsTheme);
       if (owned) canvas.remove();
@@ -739,7 +742,7 @@ export function mount(target, options = {}) {
     for (; wakeAcc >= WAKE_STEP; wakeAcc -= WAKE_STEP) {
       if (renderer.energy) { renderer.depositWake(pond); renderer.diffuse(WAKE_STEP); }
     }
-    if (++measured % MEASURE_EVERY_FRAMES === 0) measure();
+    if (++measured % MEASURE_EVERY_FRAMES === 0 || scrolled) { scrolled = false; measure(); }
     renderer.render(pond);
     o.onFrame?.(instance);
     requestAnimationFrame(frame);
@@ -748,6 +751,8 @@ export function mount(target, options = {}) {
   addEventListener("pointermove", onMove, { passive: true });
   addEventListener("click", onClick);
   addEventListener("blur", calm);
+  // Capture: scroll doesn't bubble, and inner scrolling panes move copy too.
+  addEventListener("scroll", onScroll, { passive: true, capture: true });
   document.documentElement.addEventListener("pointerleave", calm);
   prefersLight.addEventListener("change", onOsTheme);
   const observer = new ResizeObserver(resize);
