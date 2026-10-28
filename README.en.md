@@ -59,6 +59,7 @@ python3 -m http.server 8899
 | `species` | which creatures, comma-separated; default `koi` |
 | `avoid` | CSS selector for elements the fish swim around; default `[data-pond-avoid]` |
 | `no-feed` | clicks don't drop food |
+| `keep` | a name: when the element leaves the page its pond is held, and the next element with the same name carries on with the same fish. For client-side routing (Astro, Turbo…); a full reload still starts over |
 
 ### From JavaScript
 
@@ -90,6 +91,7 @@ fills the page. It returns `{ pond, renderer, canvas, feed, setTheme, measure, d
 | `speed` | `1` | swim speed; drops to 0.2× when the system asks for reduced motion |
 | `palette` | `{}` | colour overrides; see `DARK` in `src/pond.js` for the keys |
 | `onFrame` | | called after each frame |
+| `pond` | | the `pond` from an earlier `mount` to carry on with, instead of new fish |
 
 The canvas is transparent and the tiles are blended toward `bg`, so set `page` and `bg` in
 `palette` close to your page background, or the pond won't match the page.

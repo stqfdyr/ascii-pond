@@ -56,6 +56,7 @@ python3 -m http.server 8899
 | `species` | 放哪些生物，逗号分隔，默认 `koi` |
 | `avoid` | 鱼要绕开的元素（CSS 选择器），默认 `[data-pond-avoid]` |
 | `no-feed` | 点击不撒鱼食 |
+| `keep` | 起个名字。元素被移出页面后鱼塘留着，下一个同名元素接着游。给 Astro、Turbo 这类站内跳转用；整页刷新仍会重置 |
 
 ### 用 JavaScript 控制
 
@@ -87,6 +88,7 @@ pond.destroy();                 // 移除池塘
 | `speed` | `1` | 游动速度；系统开了「减弱动态效果」时自动降到 0.2 倍 |
 | `palette` | `{}` | 改配色，可用的键见 `src/pond.js` 里的 `DARK` |
 | `onFrame` | | 每帧画完后调用 |
+| `pond` | | 传入之前某次 `mount` 返回的 `pond`，接着它的鱼游，不重新放鱼 |
 
 画布是透明的，字符方块的颜色会往 `bg` 上混，所以 `palette` 里的 `page` 和 `bg` 要设成接近页面背景的颜色，
 不然池塘和页面会有色差。

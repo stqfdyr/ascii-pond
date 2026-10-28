@@ -5,7 +5,7 @@
 //
 // The engine owns the water (ripples, wake, food), drawing, themes and input. Everything about a
 // kind of creature lives in its species module (koi.js is one): see `species` below.
-import { TAU, clamp, rand, smoothstep, mix, packRgb, lineGlyph, compact } from "./util.js";
+import { TAU, clamp, rand, smoothstep, packRgb, lineGlyph, compact } from "./util.js";
 import { koi } from "./koi.js";
 
 /**
@@ -590,6 +590,8 @@ const DEFAULTS = {
   palette: {},
   /** Called after every frame with the instance (e.g. to recolour text during a theme wipe). */
   onFrame: null,
+  /** A Pond from an earlier mount (instance.pond) to carry on with, instead of seeding a new one. */
+  pond: null,
 };
 
 function resolveSpecies(entry) {
@@ -628,7 +630,7 @@ export function mount(target, options = {}) {
   // In forced-colours mode the glyphs turn into unreadable blocks, and the pond is decoration.
   if (matchMedia("(forced-colors: active)").matches) canvas.style.display = "none";
 
-  const pond = new Pond(species);
+  const pond = o.pond ?? new Pond(species);
   const renderer = new PondRenderer(canvas, themes);
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const prefersLight = matchMedia("(prefers-color-scheme: light)");
@@ -763,9 +765,13 @@ export function mount(target, options = {}) {
 }
 
 // ─── <ascii-pond> ───────────────────────────────────────────────────────────
+/** Ponds held by `keep` name until an element takes them back. */
+const kept = new Map();
 /**
- * <ascii-pond species="koi" count="5" young="0" theme="auto|dark|light" avoid="selector" fixed no-feed>
+ * <ascii-pond species="koi" count="5" young="0" theme="auto|dark|light" avoid="selector" fixed no-feed keep="name">
  * Without `fixed` it fills itself, so give it a size.
+ * With `keep`, a pond removed from the page is held under that name, and the next element with the
+ * same name carries on with its fish: client-side routing swaps the element out and back in.
  */
 class AsciiPondElement extends HTMLElement {
   connectedCallback() {
@@ -781,9 +787,17 @@ class AsciiPondElement extends HTMLElement {
       ...(this.hasAttribute("avoid") ? { avoid: attr("avoid") || null } : {}),
       feed: !this.hasAttribute("no-feed"),
       fixed: this.hasAttribute("fixed"),
+      pond: this.takeKept(),
     });
   }
+  /** Taken, not shared: two elements stepping one pond would run it at double speed. */
+  takeKept() {
+    const name = this.getAttribute("keep"), pond = kept.get(name);
+    kept.delete(name);
+    return pond;
+  }
   disconnectedCallback() {
+    if (this.instance && this.hasAttribute("keep")) kept.set(this.getAttribute("keep"), this.instance.pond);
     this.instance?.destroy();
     this.instance = null;
   }

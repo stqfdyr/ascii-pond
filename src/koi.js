@@ -22,13 +22,13 @@ const FULL_BEAT = 5;                         // a full tail beat holds this many
  * its next mood at random, never the one it just had, so no two koi keep the same rhythm.
  */
 const MOODS = [
-  ["cruise",  (e) => 3,       [6, 18], [0.75, 1.05]],
-  ["glide",   (e) => 2,       [5, 14], [0.7, 1]],      // stroke, coast, stroke: irregular
+  ["cruise",  () => 3,       [6, 18], [0.75, 1.05]],
+  ["glide",   () => 2,       [5, 14], [0.7, 1]],      // stroke, coast, stroke: irregular
   ["explore", (e) => 2.4 * e, [8, 20], [1, 1.4]],      // a long run to a far point of the pond
   ["rest",    (e) => 1.6 / e, [4, 12], [0.12, 0.3]],   // hangs deep, barely moving
-  ["surface", (e) => 1,       [4, 10], [0.3, 0.55]],   // noses along the top, mouthing it
-  ["follow",  (e) => 1.2,     [6, 15], [0.9, 1.2]],    // trails a neighbour for a while
-  ["search",  (e) => 0,       [3, 9],  [0.9, 1.3]],    // after food: mills about where it was
+  ["surface", () => 1,       [4, 10], [0.3, 0.55]],   // noses along the top, mouthing it
+  ["follow",  () => 1.2,     [6, 15], [0.9, 1.2]],    // trails a neighbour for a while
+  ["search",  () => 0,       [3, 9],  [0.9, 1.3]],    // after food: mills about where it was
 ];
 
 // what a body point is
