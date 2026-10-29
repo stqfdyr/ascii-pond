@@ -3,6 +3,8 @@
 export const TAU = Math.PI * 2;
 export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 export const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+/** A wait with no rhythm to it (exponential, at least `min`): own clocks built from these never beat. */
+export const randGap = (mean, min = 0) => Math.max(min, -Math.log(1 - Math.random()) * mean);
 export const smoothstep = (e0, e1, x) => {
   const t = clamp((x - e0) / (e1 - e0), 0, 1);
   return t * t * (3 - 2 * t);

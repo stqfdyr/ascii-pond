@@ -1,7 +1,7 @@
 // The koi: a 20-node spine that each screen cell is projected onto, drawn as glyph tiles.
 // A species module for the pond engine (see `species` in pond.js for the interface).
 import {
-  TAU, clamp, rand, smoothstep, angleDiff, mix, shade, ramp, packRgb, hash3, valueNoise, lineGlyph, repel, compact,
+  TAU, clamp, rand, randGap, smoothstep, angleDiff, mix, shade, ramp, packRgb, hash3, valueNoise, lineGlyph, repel, compact,
 } from "./util.js";
 
 // ─── constants ──────────────────────────────────────────────────────────────
@@ -18,32 +18,32 @@ const GLIDE_DRAG = 0.45;                     // 1/s: a coasting koi loses half i
 const FULL_BEAT = 5;                         // a full tail beat holds this many × cruise speed
 
 /**
- * What an idle koi is up to: [name, weight by energy, seconds, speed × cruise]. Each koi picks
- * its next mood at random, never the one it just had, so no two koi keep the same rhythm.
+ * What a koi can be up to. Each koi picks its next mood at random, never the one it just had, so no
+ * two koi keep the same rhythm; a mood without a `weight` is only ever started by something.
+ *   weight(energy)  odds of picking it        secs, speed   how long, and × cruise
+ *   stroke   mean seconds between its own strokes (see step()); the gaps are random, never a beat
+ *   social   still up for company             roam          how far its wander swings it (0.6)
+ *   radius   turning circle × length with company (0.6)     brisk  speeds up and sheds it like a dash
+ * Everything else a mood does is in moodGoal().
  */
-const MOODS = [
-  ["cruise",  () => 3,       [6, 18], [0.75, 1.05]],
-  ["glide",   () => 2,       [5, 14], [0.7, 1]],      // stroke, coast, stroke: irregular
-  ["explore", (e) => 2.4 * e, [8, 20], [1, 1.4]],      // a long run to a far point of the pond
-  ["rest",    (e) => 1.6 / e, [4, 12], [0.12, 0.3]],   // hangs deep, barely moving
-  ["surface", () => 1,       [4, 10], [0.3, 0.55]],   // noses along the top, mouthing it
-  ["follow",  () => 1.2,     [6, 15], [0.9, 1.2]],    // trails a neighbour for a while
-  ["search",  () => 0,       [3, 9],  [0.9, 1.3]],    // after food: mills about where it was
+const MOODS = {
+  cruise:  { weight: () => 3,        secs: [6, 18], speed: [0.75, 1.05], stroke: 4, social: true },
+  glide:   { weight: () => 2,        secs: [5, 14], speed: [0.7, 1], stroke: 1.8, social: true },     // stroke, coast, stroke: irregular
+  explore: { weight: (e) => 2.4 * e, secs: [8, 20], speed: [1, 1.4], stroke: 3.5, social: true, roam: 0.35 },  // a long run to a far point of the pond
+  rest:    { weight: (e) => 1.6 / e, secs: [4, 12], speed: [0.12, 0.3], stroke: 12 },               // hangs deep, barely moving
+  surface: { weight: () => 1,        secs: [4, 10], speed: [0.3, 0.55], stroke: 7, social: true, roam: 0.9 },  // noses along the top, mouthing it
+  follow:  { weight: () => 1.2,      secs: [6, 15], speed: [0.9, 1.2] },                           // trails a neighbour for a while
+  search:  { secs: [3, 9], speed: [0.9, 1.3], stroke: 3 },                                         // after food: mills about where it was
   // Only ever started by two koi meeting (see glance()):
-  ["chase",   () => 0,       [6, 12], [1.8, 2.3]],   // one hard on the other's tail, which bolts and swerves when caught up
-  ["tussle",  () => 0,       [7, 11], [2.2, 2.8]],   // met head-on: the two whirl round each other
+  chase:   { secs: [6, 12], speed: [1.8, 2.3], radius: 0.45, brisk: true },  // one hard on the other's tail, which bolts and swerves when caught up
+  tussle:  { secs: [7, 11], speed: [2.2, 2.8], radius: 0.4, brisk: true },   // met head-on: the two whirl round each other
   // Started by its own clock, or by another darting past (see dart()):
-  ["dart",    () => 0,       [6, 12], [2.6, 3.4]],   // a sudden run right across the pond, alone or racing another
-];
+  dart:    { secs: [6, 12], speed: [2.6, 3.4], roam: 0.35, brisk: true },    // a sudden run right across the pond, alone or racing another
+};
 
 /** Mean seconds between one koi's sudden runs across the pond: with a handful of koi, one every minute or so. */
 const DART_GAP = 360;
 
-/** Mean seconds between a koi's own strokes, by mood (see step()); the gaps are random, never a beat. */
-const STROKE_GAP = { cruise: 4, glide: 1.8, explore: 3.5, rest: 12, surface: 7, search: 3 };
-
-/** What a koi can be doing and still be up for company. */
-const SOCIAL = new Set(["cruise", "glide", "explore", "surface"]);
 /** Odds that two koi who meet, both wanting company, start something; tuned for one every few minutes. */
 const PLAY_ODDS = 0.8;
 
@@ -283,16 +283,12 @@ function spawn(pond, species, { young = false, offscreen = false } = {}) {
     beat: 0,
     finPhase: rand(0, TAU),
     startle: 0,
-    nextSpook: rand(60, 300),
     fleeX: 0,
     fleeY: 0,
     gulp: 0,
     spine: new Float32Array(NODES * 2),
     arc: new Float32Array(NODES),
     arcTotal: 1,
-    segHalf: 0,
-    flareLeft: 1,
-    flareRight: 1,
   });
 }
 
@@ -381,7 +377,7 @@ function step(pond, k, dt) {
   let dx = Math.cos(k.heading), dy = Math.sin(k.heading);
   // A random walk: its step scales with √dt, so the wander is the same at any STEP.
   k.wander = clamp(k.wander + (Math.random() - 0.5) * 2.4 * Math.sqrt(dt / 60), -0.9, 0.9);
-  const roam = k.mood === "explore" || k.mood === "dart" ? 0.35 : k.mood === "surface" ? 0.9 : 0.6;
+  const roam = MOODS[k.mood].roam ?? 0.6;
   dx += Math.cos(k.heading + k.wander) * roam;
   dy += Math.sin(k.heading + k.wander) * roam;
 
@@ -395,11 +391,6 @@ function step(pond, k, dt) {
   const food = k.leaving || k.reactAt > time ? null
     : pickFood(pond, k, hx, hy, k.rush > 0 || k.mood === "search" ? Math.hypot(W, H) : time < k.deaf ? L * 0.6 : L * 1.6 + 220);
 
-  // Every few minutes something unseen (a shadow, a sound) spooks a koi; one with food on its mind ignores it.
-  if (time > k.nextSpook) {
-    k.nextSpook = time + rand(120, 360);
-    if (!food && !k.reactAt && k.mood !== "search") { const a = rand(0, TAU); spook(pond, k, hx + Math.cos(a) * L * 0.5, hy + Math.sin(a) * L * 0.5); }
-  }
   k.startle = Math.max(0, k.startle - dt * 0.6);
   const fleeing = k.startle > 0.3 && !food;
 
@@ -437,7 +428,7 @@ function step(pond, k, dt) {
     if (time > k.moodUntil) setMood(pond, k, pickMood(k));
     // Now and then, out of nowhere, it bolts right across the pond.
     if (time > k.nextDart) {
-      k.nextDart = time + Math.max(30, -Math.log(1 - Math.random()) * DART_GAP / k.energy);
+      k.nextDart = time + randGap(DART_GAP / k.energy, 30);
       if (free(k) && inOpen(pond, k) && !pond.creatures.some((o) => o.shoal === k)) dart(pond, k);
     }
     if (k.joinTo && time > k.joinAt) join(pond, k);
@@ -486,7 +477,7 @@ function step(pond, k, dt) {
       const tail = (NODES - 2) * 2, curl = Math.abs(angleDiff(k.heading, Math.atan2(nodes[tail + 1] - nodes[tail + 3], nodes[tail] - nodes[tail + 2])));
       k.veerUntil = curl < 0.9 && Math.random() < 0.75 ? time + 4 : 0;
     }
-    k.nextStroke = time + (STROKE_GAP[k.mood] ?? 4) * (0.2 - Math.log(1 - Math.random())) / k.energy;
+    k.nextStroke = time + (MOODS[k.mood].stroke ?? 4) *(0.2 - Math.log(1 - Math.random())) / k.energy;
   }
 
   for (const other of pond.creatures) {
@@ -516,6 +507,13 @@ function step(pond, k, dt) {
       dx += nx * push;
       dy += ny * push;
     }
+    // Nosing hard into one drifting slowly startles it: a dozing koi doesn't see it coming. That,
+    // and a dart going by, is what spooks a koi; nothing does on a clock.
+    if (worst > 0.7 && !food && k.speed > other.speed * 1.5 && other.speed < (12 + other.length * 0.05) * 0.5 &&
+        !other.food && !other.reactAt && other.startle < 0.3 && time - other.lastDodge > 4) {
+      other.lastDodge = time;
+      spook(pond, other, hx, hy, k);
+    }
     // Loose shoaling: nearby koi drift the same way.
     if (!chasing && Math.hypot(ohx - hx, ohy - hy) < L * 1.6) {
       dx += Math.cos(other.heading) * 0.18;
@@ -540,7 +538,7 @@ function step(pond, k, dt) {
   // Walls: look ahead and turn along them in good time, so a koi wide-arcs round rather than
   // ploughing off-screen; past the edge it always heads back in.
   // Food by the edge still gets taken: a koi after it looks less far ahead.
-  const look = L * (chasing ? 0.3 : curious ? 0.5 : 0.6);
+  const look = L * (chasing ? 0.3 : curious ? 0.5 : 0.8);
   const ax = hx + Math.cos(k.heading) * look, ay = hy + Math.sin(k.heading) * look;
   const ex = Math.max(0, -ax) - Math.max(0, ax - W), ey = Math.max(0, -ay) - Math.max(0, ay - H);
   const wall = k.leaving ? 0 : clamp(Math.hypot(ex, ey) / (L * 0.6), 0, 1);
@@ -584,7 +582,7 @@ function step(pond, k, dt) {
   // corrections are gentle arcs and nothing snaps between hard-over and straight.
   // With company, it turns tighter than when cruising alone, never as hard as for food.
   const playing = !fleeing && !chasing && !curious && (!!k.follow || k.mood === "dart");
-  const radius = (fleeing ? 0.25 : chasing ? 0.33 : curious ? 0.55 : playing ? (k.mood === "tussle" ? 0.4 : k.mood === "chase" ? 0.45 : 0.6) : veering ? k.veerR : 0.9 - 0.3 * wall) / (1 + k.rush * 0.6);
+  const radius = (fleeing ? 0.25 : chasing ? 0.33 : curious ? 0.55 : playing ? MOODS[k.mood].radius ?? 0.6 : veering ? k.veerR : 0.9 - 0.3 * wall) / (1 + k.rush * 0.6);
   const cStart = fleeing && k.startle > 0.8;
   // A koi turning of its own accord can swing round even while slow, sculling with its fins.
   const maxRate = cStart ? 7 : Math.min((fleeing ? 3 : chasing ? 1.9 + closing : curious ? 1.2 : playing || veering ? 1 : 0.7) * (1 + k.rush * 0.6),
@@ -617,7 +615,7 @@ function step(pond, k, dt) {
   const calm = !fleeing && !chasing && k.mood !== "rest" && k.mood !== "surface";
   if (time > k.nextDash) {
     if (calm) { k.dashUntil = time + rand(1.2, 3); k.dashV = rand(1.8, 2.6); }
-    k.nextDash = time + rand(25, 80) / k.energy;
+    k.nextDash = time + randGap(50, 10) / k.energy;
   }
   const dashing = calm && time < k.dashUntil;
   // Tail beats near the surface push small rings out behind the koi.
@@ -639,12 +637,13 @@ function step(pond, k, dt) {
     : chasing ? (1.2 + 3 * k.rush * k.rush) * (1 + 0.3 * far) * (rival ? 1.35 : 1) *
       (1 + 0.4 * closing * aligned * k.rush) * (1 - 0.6 * closing * (1 - aligned))
     : dashing ? k.dashV
-    // A slow koi at a wall picks up speed to turn: it can only turn as fast as it swims.
-    : Math.max(curious ? 1.3 : 0, over > 0 ? 1 : 0.9 * wall, k.vMood * (1 + k.pace) * (1 + k.rush * 0.5) * (1 + lag))) * cruise;
+    // A slow koi at a wall picks up speed to turn: it can only turn as fast as it swims. Out of sight
+    // it hurries back round, so the pond doesn't sit half empty while it arcs where nobody can see.
+    : Math.max(curious ? 1.3 : 0, over > 0 ? 1.4 : 0.9 * wall, k.vMood * (1 + k.pace) * (1 + k.rush * 0.5) * (1 + lag))) * cruise;
   // Hard strokes bite harder and the water pushes back harder at speed: a koi in a hurry gets
   // up to speed (and sheds it) in a fraction of a second, a calm one over a couple of seconds.
   // Racing, chasing or tussling it gets up to speed and sheds it like a dash, not like a cruise.
-  const brisk = !fleeing && !chasing && (k.mood === "dart" || k.mood === "chase" || k.mood === "tussle");
+  const brisk = !fleeing && !chasing && MOODS[k.mood].brisk;
   const urgent = fleeing || chasing || dashing || brisk, drag = GLIDE_DRAG * (fleeing || chasing ? 4 : dashing || brisk ? 2 : 1), thrust = drag * cruise * FULL_BEAT;
   let want = clamp((drag * target + (urgent ? 2 : 0.6) * (target - k.speed)) / thrust, 0, 1);
   // Never a coast by a wall: a slow koi can't turn, and would drag round it, curled, for seconds.
@@ -666,7 +665,7 @@ function step(pond, k, dt) {
   // Koi drift between the deep and the surface, and rise for food.
   if (time > k.nextDive) {
     k.depthTarget = rand(0.5, k.depthMax);
-    k.nextDive = time + rand(8, 20);
+    k.nextDive = time + randGap(14, 3);
   }
   k.depth += ((chasing ? 1 : k.depthTarget) - k.depth) * Math.min(1, dt * (chasing ? 0.8 : 0.15));
 
@@ -699,8 +698,8 @@ function step(pond, k, dt) {
     // A mouthful whets it while food is about; each one also fills it up a little.
     k.rush = Math.min(1, k.rush + 0.2 * k.hunger);
     k.hunger = Math.max(0.45, k.hunger - 0.07);
-  } else if (time > k.nextSurface) {
-    // Now and then it mouths the surface on its own, without food.
+  } else if (time > k.nextSurface && k.depth > 0.8) {
+    // Now and then, once up at the top, it mouths the surface on its own, without food.
     pond.ripples.push({ x: nodes[0], y: nodes[1], born: time, strength: 0.3 });
     k.nextSurface = time + (k.mood === "surface" ? rand(1.5, 4) : rand(8, 20));
   }
@@ -708,14 +707,14 @@ function step(pond, k, dt) {
 
 /**
  * A scare from (x, y): a C-start, an instant sprint here and a snap turn away in step(); it calms
- * over a couple of seconds. Close neighbours catch it, more mildly.
+ * over a couple of seconds. Close neighbours catch it, more mildly, except `by`, the one that did it.
  */
-function spook(pond, k, x, y) {
+function spook(pond, k, x, y, by) {
   const hx = k.nodes[0], hy = k.nodes[1], L = k.length;
   k.speed = Math.max(k.speed, (12 + L * 0.05) * 2.5);
   k.beat = 1;
   for (const o of pond.creatures) {
-    if (o === k || o.species !== k.species || o.startle >= 0.5 || o.food || o.reactAt || Math.hypot(o.nodes[0] - hx, o.nodes[1] - hy) > L * 1.2) continue;
+    if (o === k || o === by || o.species !== k.species || o.startle >= 0.5 || o.food || o.reactAt || Math.hypot(o.nodes[0] - hx, o.nodes[1] - hy) > L * 1.2) continue;
     o.startle = 0.75;
     o.fleeX = x;
     o.fleeY = y;
@@ -727,13 +726,14 @@ function spook(pond, k, x, y) {
 
 /** A weighted draw over the idle moods, leaning on the koi's energy; never the one it is in. */
 function pickMood(k) {
-  let r = Math.random() * MOODS.reduce((sum, [name, w]) => sum + (name === k.mood ? 0 : w(k.energy)), 0);
-  for (const [name, w] of MOODS) if (name !== k.mood && (r -= w(k.energy)) <= 0) return name;
+  const weight = (name) => (name === k.mood ? 0 : MOODS[name].weight?.(k.energy) ?? 0);
+  let r = Math.random() * Object.keys(MOODS).reduce((sum, name) => sum + weight(name), 0);
+  for (const name in MOODS) if (name !== k.mood && (r -= weight(name)) <= 0) return name;
   return "cruise";
 }
 
 function setMood(pond, k, name) {
-  const [, , secs, speed] = MOODS.find((m) => m[0] === name);
+  const { secs, speed } = MOODS[name];
   const time = pond.time;
   k.mood = name;
   k.moodUntil = time + rand(...secs) * (name === "search" ? 0.6 + 0.8 * k.curiosity : 1);
@@ -773,7 +773,7 @@ function setMood(pond, k, name) {
 }
 
 /** Idle, and not in the middle of anything with anyone. */
-const free = (k) => SOCIAL.has(k.mood) && !k.food && !k.reactAt && k.startle < 0.3 && !k.leaving;
+const free = (k) => MOODS[k.mood].social &&!k.food && !k.reactAt && k.startle < 0.3 && !k.leaving;
 /** Heading roughly the same way: only then does falling in behind look like company, not a U-turn. */
 const sameWay = (a, b) => Math.cos(angleDiff(a.heading, b.heading)) > 0.3;
 
@@ -882,7 +882,7 @@ function moodGoal(pond, k) {
   const time = pond.time, L = k.length, hx = k.nodes[0], hy = k.nodes[1];
   if (k.mood === "follow") {
     const o = k.follow;
-    if (!pond.creatures.includes(o) || Math.hypot(o.nodes[0] - hx, o.nodes[1] - hy) > L * (k.shoal ? (k.shoal.paradeUntil > time ? 20 : 6) : 4)) { setMood(pond, k, "cruise"); return null; }
+    if (!pond.creatures.includes(o) || o.leaving || Math.hypot(o.nodes[0] - hx, o.nodes[1] - hy) > L * (k.shoal ? (k.shoal.paradeUntil > time ? 20 : 6) : 4)) { setMood(pond, k, "cruise"); return null; }
     // In a shoal: its own place by the leader, the first two abreast, the rest a row further back
     // each pair. It steers for a point a little ahead of that place, the way the leader is going,
     // so it falls in alongside instead of circling the spot; how far behind it is sets its pace.
@@ -1061,10 +1061,8 @@ function draw(renderer, k, t) {
   const spread = 1 - 0.25 * k.beat;
   const scull = 0.18 * (1 - k.beat) * Math.sin(k.finPhase);
   const bank = clamp(k.turn * 0.6, -0.35, 0.35);
-  k.flareLeft = spread + scull - bank;
-  k.flareRight = spread - scull + bank;
-  fins.left = finProfile(k.flareLeft);
-  fins.right = finProfile(k.flareRight);
+  fins.left = finProfile(spread + scull - bank);
+  fins.right = finProfile(spread - scull + bank);
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let n = 0; n < NODES; n++) {
