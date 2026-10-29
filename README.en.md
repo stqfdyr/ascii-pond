@@ -125,8 +125,14 @@ to the `species` option.
   (body, fin, eye or barbel) and drawn as a tile with a character on it. Markings stick to the
   body, so they bend with the fish.
 - Each fish has its own temperament and switches between cruising, gliding, exploring, resting,
-  rising and following another fish, with the odd sudden dash. Hungry fish fight over food;
-  full ones can't be bothered.
+  rising and following another fish. Strokes come light and strong, turns small and large, each
+  followed by a glide. Hungry fish fight over food; full ones can't be bothered, and a fed pond
+  stays lively for a while.
+- Now and then a fish bolts right across the pond; fish in its way scatter, and one may race it.
+- When fish meet they play: one chases another hard and the one caught bolts and swerves, two that
+  meet head-on whirl round each other, two side by side race, and a fish heading off may gather a
+  few followers swimming abreast. Once in a long while the whole pond tours together behind one
+  fish. Nothing runs on a timer; it comes down to who meets whom, and whether they're in the mood.
 - Now and then a fish startles at nothing and darts off, and its neighbours flinch. Dragging a
   finger across the water leaves ripples.
 - With reduced motion on, the fish swim slower and feeding still works. In forced-colours (high
