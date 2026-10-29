@@ -681,7 +681,8 @@ export function mount(target, options = {}) {
     // A finger has no hover, so it leaves ripples behind it instead.
     if (e.pointerType === "touch" && inside && e.timeStamp - lastTouchRipple > 60) {
       lastTouchRipple = e.timeStamp;
-      if (renderer.cellIndex(x, y) >= 0 && renderer.cellDim[renderer.cellIndex(x, y)] > 0.9) {
+      const i = renderer.cellIndex(x, y);
+      if (i >= 0 && renderer.cellDim[i] > 0.9) {
         pond.ripples.push({ x, y, born: pond.time, strength: 0.18 });
       }
     }
@@ -705,9 +706,11 @@ export function mount(target, options = {}) {
   const calm = () => { pond.pointer.active = false; };
   const onOsTheme = () => { if (themeMode === "auto") renderer.setTheme(prefersLight.matches); };
 
-  let last = performance.now(), acc = 0, wakeAcc = 0, measured = 0, running = true, scrolled = false;
+  let last = performance.now(), acc = 0, wakeAcc = 0, measured = 0, running = true, stale = false, inView = true;
   // Copy moves under a fixed pond on scroll: re-measure on the next frame, not the next periodic one.
-  const onScroll = () => { scrolled = true; };
+  const onScroll = () => { stale = true; };
+  // An embedded pond scrolled out of sight keeps swimming but isn't drawn or measured; back in view, it re-measures.
+  const sight = new IntersectionObserver(([e]) => { inView = e.isIntersecting; stale ||= inView; });
   const instance = {
     pond, renderer, canvas,
     feed: (x, y) => pond.feed(x, y),
@@ -721,6 +724,7 @@ export function mount(target, options = {}) {
     destroy() {
       running = false;
       observer.disconnect();
+      sight.disconnect();
       removeEventListener("pointermove", onMove);
       removeEventListener("click", onClick);
       removeEventListener("blur", calm);
@@ -744,8 +748,10 @@ export function mount(target, options = {}) {
     for (; wakeAcc >= WAKE_STEP; wakeAcc -= WAKE_STEP) {
       if (renderer.energy) { renderer.depositWake(pond); renderer.diffuse(WAKE_STEP); }
     }
-    if (++measured % MEASURE_EVERY_FRAMES === 0 || scrolled) { scrolled = false; measure(); }
-    renderer.render(pond);
+    if (inView) {
+      if (++measured % MEASURE_EVERY_FRAMES === 0 || stale) { stale = false; measure(); }
+      renderer.render(pond);
+    }
     o.onFrame?.(instance);
     requestAnimationFrame(frame);
   }
@@ -759,6 +765,7 @@ export function mount(target, options = {}) {
   prefersLight.addEventListener("change", onOsTheme);
   const observer = new ResizeObserver(resize);
   observer.observe(canvas);
+  sight.observe(canvas);
   resize();
   requestAnimationFrame(frame);
   return instance;
